@@ -1,0 +1,10 @@
+config:
+  test-service-infra:projectName: "growthz"
+  test-service-infra:environment: "dev"
+  test-service-infra:serviceName: "instrumentation"
+  test-service-infra:lambdaMemorySize: "1024"
+  test-service-infra:lambdaTimeout: "120"
+  test-service-infra:baseStack: "organization/base-infra/dev" # Reference to base infra
+  test-service-infra:sentryDsn:
+    secure: v1:rrwe3ueMHmxjpZO6:qRwySegIkpLyVGF1QR2hYvwqokOp3Rw/mI/xTU7gUPXvJIna79AfHINop0ziE3YlJXMWk/mdSQvUDw60TJ8YDoO/mYQiD2w/zK+gTN+ctYls/KHTCODp5oIxi0tx1/m/lfM2CyDy+ZlPxcnR3k4z
+encryptionsalt: v1:dTcFIdAgBxk=:v1:KckDCgyEQk0iOXLl:rxbVCUHJx/QLRZtnKgJRcTqqGg895A==

@@ -1,0 +1,6 @@
+name: test-service-infra
+runtime:
+  name: nodejs
+  options:
+    packagemanager: pnpm
+description: "Test service to check lambda instrumentation"
