@@ -9,7 +9,7 @@ import type { Handler } from 'aws-lambda';
 import Sentry from "@sentry/aws-serverless";
 import { setupFastifyErrorHandler } from "@sentry/node"
 import { DefaultHandler } from '@h4ad/serverless-adapter/handlers/default';
-import { AlbAdapter } from '@h4ad/serverless-adapter/adapters/aws';
+import { AlbAdapter, ApiGatewayV2Adapter } from '@h4ad/serverless-adapter/adapters/aws';
 import { PromiseResolver } from '@h4ad/serverless-adapter/resolvers/promise';
 import { bootstrapApp } from './init';
 
@@ -36,6 +36,7 @@ export const handler: Handler = Sentry.wrapHandler(
     .setResolver(new PromiseResolver())
     .setRespondWithErrors(true)
     .addAdapter(new AlbAdapter())
+    .addAdapter(new ApiGatewayV2Adapter())
     .build(),
   {
     startTrace: true,

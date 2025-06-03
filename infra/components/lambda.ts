@@ -7,15 +7,10 @@ export interface LambdaArgs {
   projectName: string;
   environment: string;
   serviceName: string;
-  vpcId: pulumi.Input<string>;
-  privateSubnetIds: pulumi.Input<string[]>;
   lambdaMemorySize: number;
   lambdaTimeout: number;
   environmentVariables: Record<string, pulumi.Input<string>>;
-  lambdaSecurityGroupId: pulumi.Input<string>;
   s3BucketArn?: pulumi.Input<string>;
-  sharedAlbListener: pulumi.Input<string>;
-  apiEndpoint: pulumi.Input<string>;
   sqsQueueArns?: pulumi.Input<string[]>;
   lambdaLayerArns?: pulumi.Input<pulumi.Input<string>[]>;
   // New optional parameters for SQS event source configuration
@@ -28,6 +23,7 @@ export interface LambdaArgs {
 export interface LambdaOutputs {
   roleName: pulumi.Output<string>;
   functionArn: pulumi.Output<string>;
+  functionUrl: pulumi.Output<string>;
   eventSourceMappingIds?: pulumi.Output<string[]>;
 }
 
@@ -96,11 +92,7 @@ export function createLambdaFunction(args: LambdaArgs): LambdaOutputs {
     policyArn: "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
   });
 
-  // Attach VPC access policy
-  new aws.iam.RolePolicyAttachment(`${args.projectName}-${args.environment}-${args.serviceName}-policy-vpc-access`, {
-    role: lambdaRole.name,
-    policyArn: "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
-  });
+
 
   new aws.iam.RolePolicyAttachment(`${args.projectName}-${args.environment}-${args.serviceName}-xray-policy`, {
     role: lambdaRole.name,
@@ -181,57 +173,28 @@ export function createLambdaFunction(args: LambdaArgs): LambdaOutputs {
     environment: {
       variables: args.environmentVariables,
     },
-    vpcConfig: {
-      subnetIds: args.privateSubnetIds,
-      securityGroupIds: [args.lambdaSecurityGroupId]
-    },
     layers: args.lambdaLayerArns,
     // tracingConfig: {
     //   mode: "Active",
     // }
   });
 
-  // Create Target Group for Lambda
-  const targetGroup = new aws.lb.TargetGroup(`${args.projectName}-${args.environment}-${args.serviceName}-tg`, {
-    name: `${args.projectName}-${args.environment}-${args.serviceName}-tg`,
-    targetType: "lambda",
-  });
-
-  // Create ALB listener rule
-  new aws.lb.ListenerRule(`${args.projectName}-${args.environment}-${args.serviceName}-rule`, {
-    listenerArn: args.sharedAlbListener,
-    actions: [{
-      type: "forward",
-      targetGroupArn: targetGroup.arn,
-    }],
-    conditions: [
-      {
-        hostHeader: {
-          values: [pulumi.interpolate`${args.apiEndpoint}`],
-        },
-      },
-    ],
-  });
-
-  // Add permission for ALB to invoke Lambda
-  const permission = new aws.lambda.Permission(`${args.projectName}-${args.environment}-alb-permission`, {
-    action: "lambda:InvokeFunction",
-    function: lambdaFunc.arn,
-    principal: "elasticloadbalancing.amazonaws.com",
-    sourceArn: targetGroup.arn,
-    statementId: "AllowALBInvocation",
-  });
-
-  // Attach Lambda to target group
-  new aws.lb.TargetGroupAttachment(`${args.projectName}-${args.environment}-tg-attachment`, {
-    targetGroupArn: targetGroup.arn,
-    targetId: lambdaFunc.arn,
-  }, {
-    dependsOn: [permission]
+  // Create Lambda Function URL
+  const functionUrl = new aws.lambda.FunctionUrl(`${args.projectName}-${args.environment}-${args.serviceName}-url`, {
+    functionName: lambdaFunc.name,
+    authorizationType: "NONE", // You can change this to "AWS_IAM" if you want authentication
+    cors: {
+      allowCredentials: false,
+      allowHeaders: ["*"],
+      allowMethods: ["*"],
+      allowOrigins: ["*"],
+      maxAge: 86400,
+    },
   });
 
   return {
     roleName: lambdaRole.name,
     functionArn: lambdaFunc.arn,
+    functionUrl: functionUrl.functionUrl,
   };
 }

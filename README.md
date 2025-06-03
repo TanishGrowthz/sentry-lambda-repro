@@ -1,80 +1,174 @@
-# Manual Deployment Instructions
+# Deployment Instructions
 
-This README provides instructions for manually deploying the Lambda function using Docker and Amazon Elastic Container Registry (ECR).
+## Automatic Deployment
 
-## Prerequisites
+### Prerequisites
+*   Docker installed and running
+*   AWS CLI installed and configured with appropriate credentials
+*   An AWS account
+*   Pulumi installed and configured
 
-*   Docker installed and running.
-*   AWS CLI installed and configured with appropriate credentials.
-*   An AWS account.
+### Deployment Steps
 
-## Deployment Steps
+1. **Navigate to infra folder and configure stack:**
+   ```bash
+   cd infra
+   export PULUMI_CONFIG_PASSPHRASE='superstrongpassphrase'
+   pulumi config set test-service-infra:sentryDsn "https://<something>.ingest.us.sentry.io/<something>" --secret
+   ```
+   *Note: If prompted to create a stack, create one named `dev`*
 
-1.  **Build the Docker Image:**
+2. **Deploy:**
+   ```bash
+   pulumi up --non-interactive --skip-preview
+   ```
 
-    Navigate to the root of your project and build the Docker image using the `Dockerfile` in the `infra` directory:
+### Cleanup
+```bash
+pulumi destroy --non-interactive --skip-preview
+```
 
+---
+
+## Manual Deployment
+
+### Prerequisites
+*   Docker installed and running
+*   AWS CLI installed and configured with appropriate credentials
+*   An AWS account
+
+### Deployment Steps
+
+1.  **Create Lambda Execution Role:**
+
+    Create a trust policy file:
     ```bash
-    docker build -t <image-name> -f infra/Dockerfile .
+    cat > lambda-trust-policy.json << EOF
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {
+            "Service": "lambda.amazonaws.com"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    EOF
     ```
 
-    Replace `<image-name>` with a desired name for your Docker image.
+    Create the IAM role:
+    ```bash
+    aws iam create-role --role-name lambda-execution-role --assume-role-policy-document file://lambda-trust-policy.json
+    ```
 
-2.  **Authenticate with ECR:**
+    Attach the basic Lambda execution policy:
+    ```bash
+    aws iam attach-role-policy --role-name lambda-execution-role --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    ```
 
-    Authenticate your Docker client to the Amazon ECR registry. Replace `<region>` with your AWS region and `<account-id>` with your AWS account ID.
+2.  **Build the Docker Image for x86_64:**
+    ```bash
+    docker build --platform linux/amd64 -t <image-name> .
+    ```
+    *Note: The `--platform linux/amd64` flag ensures compatibility with AWS Lambda's default x86_64 architecture, regardless of your host machine (including Apple Silicon Macs).*
 
+3.  **Authenticate with ECR:**
     ```bash
     aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
     ```
 
-3.  **Create an ECR Repository (if it doesn't exist):**
-
-    If you don't have an ECR repository for your image, create one. Replace `<repository-name>` with your desired repository name.
-
+4.  **Create an ECR Repository:**
     ```bash
     aws ecr create-repository --repository-name <repository-name> --region <region>
     ```
 
-4.  **Tag the Docker Image:**
-
-    Tag your built Docker image with the ECR repository URI. Replace `<image-name>`, `<account-id>`, `<region>`, and `<repository-name>` with your respective values.
-
+5.  **Tag the Docker Image:**
     ```bash
     docker tag <image-name> <account-id>.dkr.ecr.<region>.amazonaws.com/<repository-name>:latest
     ```
 
-5.  **Push the Docker Image to ECR:**
-
-    Push the tagged Docker image to your ECR repository.
-
+6.  **Push the Docker Image to ECR:**
     ```bash
     docker push <account-id>.dkr.ecr.<region>.amazonaws.com/<repository-name>:latest
     ```
 
-6.  **Create a Lambda Function:**
+7.  **Create Lambda Function:**
+    ```bash
+    aws lambda create-function \
+        --function-name <function-name> \
+        --package-type Image \
+        --code ImageUri=<account-id>.dkr.ecr.<region>.amazonaws.com/<repository-name>:latest \
+        --role arn:aws:iam::<account-id>:role/lambda-execution-role \
+        --region <region>
+    ```
 
-    You can create a Lambda function using the AWS Management Console, AWS CLI, or an infrastructure as code tool like Pulumi or CloudFormation. When creating the function, select "Container image" as the package type and specify the ECR image URI.
+8.  **Create Function URL:**
+    ```bash
+    aws lambda create-function-url-config \
+        --function-name <function-name> \
+        --auth-type NONE \
+        --cors '{
+            "AllowCredentials": false,
+            "AllowHeaders": ["date", "keep-alive"],
+            "AllowMethods": ["*"],
+            "AllowOrigins": ["*"],
+            "ExposeHeaders": ["date", "keep-alive"],
+            "MaxAge": 86400
+        }' \
+        --region <region>
+    ```
 
-    *   **Using AWS CLI:**
+9.  **Add Function URL Permission:**
+    ```bash
+    aws lambda add-permission \
+        --function-name <function-name> \
+        --statement-id FunctionURLAllowPublicAccess \
+        --action lambda:InvokeFunctionUrl \
+        --principal "*" \
+        --function-url-auth-type NONE \
+        --region <region>
+    ```
 
-        ```bash
-        aws lambda create-function --function-name <function-name> --package-type Image --code ImageUri=<account-id>.dkr.ecr.<region>.amazonaws.com/<repository-name>:latest --role <lambda-execution-role-arn> --region <region>
-        ```
+10. **Configure Lambda Function (Optional):**
+    ```bash
+    aws lambda update-function-configuration \
+        --function-name <function-name> \
+        --environment '{"Variables": {"SENTRY_DSN": "<your-sentry-dsn>"}}' \
+        --timeout 30 \
+        --memory-size 512 \
+        --region <region>
+    ```
 
-        Replace `<function-name>` with your desired Lambda function name and `<lambda-execution-role-arn>` with the ARN of an IAM role that has permissions to execute Lambda functions and access ECR.
+### Test Your Function
+```bash
+curl -X GET <function-url>/health
+```
 
-7.  **Configure Lambda Function:**
+### Cleanup
+Delete all resources when no longer needed:
 
-    Configure your Lambda function with necessary environment variables, memory, timeout, and other settings as required by your application.
+```bash
+# Delete function URL
+aws lambda delete-function-url-config --function-name <function-name> --region <region>
 
-    *   **Using AWS CLI (example for setting environment variables):**
+# Remove function URL permission
+aws lambda remove-permission --function-name <function-name> --statement-id FunctionURLAllowPublicAccess --region <region>
 
-        ```bash
-        aws lambda update-function-configuration --function-name <function-name> --environment '{"Variables": {"SENTRY_DSN": "<your-sentry-dsn>"}}' --region <region>
-        ```
+# Delete Lambda function
+aws lambda delete-function --function-name <function-name> --region <region>
 
-        Replace `<function-name>` and `<your-sentry-dsn>` with your respective values.
+# Delete ECR repository and all images
+aws ecr delete-repository --repository-name <repository-name> --force --region <region>
 
-Now your Lambda function is deployed and configured to use the Docker image from ECR.
+# Detach policy and delete IAM role
+aws iam detach-role-policy --role-name lambda-execution-role --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+aws iam delete-role --role-name lambda-execution-role
 
+# Clean up local files
+rm lambda-trust-policy.json
+```
+
+Your Lambda function is now deployed and accessible via the function URL.
