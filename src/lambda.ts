@@ -1,4 +1,3 @@
-import './instrument';
 import { LazyFramework } from '@h4ad/serverless-adapter/frameworks/lazy';
 import { FastifyFramework } from '@h4ad/serverless-adapter/frameworks/fastify';
 import {
@@ -6,7 +5,7 @@ import {
   ServerlessAdapter,
 } from '@h4ad/serverless-adapter';
 import type { Handler } from 'aws-lambda';
-import Sentry from "@sentry/aws-serverless";
+import * as Sentry from '@sentry/aws-serverless'
 import { setupFastifyErrorHandler } from "@sentry/node"
 import { DefaultHandler } from '@h4ad/serverless-adapter/handlers/default';
 import { AlbAdapter, ApiGatewayV2Adapter } from '@h4ad/serverless-adapter/adapters/aws';
