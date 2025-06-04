@@ -1,5 +1,5 @@
-const Sentry = require("@sentry/aws-serverless");
-const { nodeProfilingIntegration } = require("@sentry/profiling-node");
+import * as Sentry from '@sentry/aws-serverless'
+import { nodeProfilingIntegration } from "@sentry/profiling-node";
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,

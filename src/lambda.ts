@@ -1,3 +1,4 @@
+import './instrument';
 import { LazyFramework } from '@h4ad/serverless-adapter/frameworks/lazy';
 import { FastifyFramework } from '@h4ad/serverless-adapter/frameworks/fastify';
 import {
@@ -34,7 +35,6 @@ export const handler: Handler = Sentry.wrapHandler(
     .setHandler(new DefaultHandler())
     .setResolver(new PromiseResolver())
     .setRespondWithErrors(true)
-    .addAdapter(new AlbAdapter())
     .addAdapter(new ApiGatewayV2Adapter())
     .build(),
   {
